@@ -90,7 +90,7 @@ mkdir src
 Criar subpastas:
 
 ```bash
-mkdir src/routes src/controllers src/services src/config src/models src/middlewares
+mkdir src/routes,src/controllers,src/services,src/config,src/models,src/middlewares
 ```
 
 Estrutura esperada:
