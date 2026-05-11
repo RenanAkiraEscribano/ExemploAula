@@ -350,34 +350,6 @@ npm-debug.log
 
 ---
 
-# 14. Buildar a imagem Docker
-
-Executar:
-
-```bash
-docker build -t docker-api-aula .
-```
-
----
-
-# 15. Executar container Docker
-
-```bash
-docker run -p 3000:3000 docker-api-aula
-```
-
----
-
-# 16. Testar aplicação Dockerizada
-
-Acessar:
-
-```text
-http://localhost:3000
-```
-
----
-
 # 17. Criar docker-compose.yml
 
 Criar:
