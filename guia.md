@@ -902,3 +902,700 @@ Ao final desta etapa, o aluno terá:
 - Schema criado com Mongoose
 - Persistência de dados com volume Docker
 - Ambiente reproduzível com Docker Compose
+
+---
+
+# 44. Interface Visual para o MongoDB
+
+Até aqui toda a interação com o banco foi feita via terminal.
+
+Para ambientes de desenvolvimento e ensino, uma interface gráfica acelera a exploração dos dados, facilita a leitura dos documentos e reduz erros de digitação em queries.
+
+Nesta etapa o projeto ganha um terceiro serviço: o **Mongo Express**.
+
+## O que é o Mongo Express
+
+Mongo Express é uma interface web open-source escrita em Node.js que se conecta a qualquer instância MongoDB e roda diretamente no browser.
+
+Equivalência com outras ferramentas:
+
+| Banco | Ferramenta visual |
+|---|---|
+| PostgreSQL | pgAdmin |
+| MySQL | phpMyAdmin |
+| MongoDB | Mongo Express |
+
+## O que é possível fazer
+
+- Visualizar bancos e collections em tempo real
+- Ler, criar, editar e deletar documentos
+- Executar queries sem abrir o terminal
+- Exportar e importar dados em JSON
+
+---
+
+# 45. Atualizar o docker-compose.yml com Mongo Express
+
+Substitua o conteúdo do arquivo:
+
+```text
+docker-compose.yml
+```
+
+por:
+
+```yaml
+services:
+
+  api:
+    build: .
+
+    container_name: docker_api_aula
+
+    ports:
+      - "3000:3000"
+
+    env_file:
+      - .env
+
+    depends_on:
+      - mongo
+
+    volumes:
+      - .:/app
+      - /app/node_modules
+
+  mongo:
+    image: mongo:latest
+
+    container_name: mongo_db_aula
+
+    ports:
+      - "27017:27017"
+
+    volumes:
+      - mongo_data:/data/db
+
+  mongo-express:
+    image: mongo-express:latest
+
+    container_name: mongo_express_aula
+
+    ports:
+      - "8081:8081"
+
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongo
+      ME_CONFIG_MONGODB_PORT: 27017
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: admin123
+      ME_CONFIG_OPTIONS_EDITORTHEME: dracula
+
+    depends_on:
+      - mongo
+
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+```
+
+---
+
+# 46. Explicando o Serviço mongo-express
+
+## image
+
+```yaml
+image: mongo-express:latest
+```
+
+Usa a imagem oficial do Mongo Express do Docker Hub.
+
+Não é necessário criar um `Dockerfile` para ela.
+
+---
+
+## ports
+
+```yaml
+ports:
+  - "8081:8081"
+```
+
+Expõe a interface web na porta `8081` do host.
+
+O acesso será feito em:
+
+```text
+http://localhost:8081
+```
+
+---
+
+## environment
+
+Variáveis que configuram a conexão e o acesso:
+
+| Variável | Função |
+|---|---|
+| `ME_CONFIG_MONGODB_SERVER` | Nome do serviço MongoDB na rede Docker |
+| `ME_CONFIG_MONGODB_PORT` | Porta do MongoDB |
+| `ME_CONFIG_BASICAUTH_USERNAME` | Usuário para login na interface |
+| `ME_CONFIG_BASICAUTH_PASSWORD` | Senha para login na interface |
+| `ME_CONFIG_OPTIONS_EDITORTHEME` | Tema do editor de documentos |
+
+---
+
+## depends_on
+
+```yaml
+depends_on:
+  - mongo
+```
+
+O Mongo Express aguarda o MongoDB iniciar antes de subir.
+
+---
+
+## restart
+
+```yaml
+restart: unless-stopped
+```
+
+Reinicia o container automaticamente em caso de falha, sem precisar rodar `docker compose up` novamente.
+
+---
+
+## Por que o servidor é "mongo" e não "localhost"
+
+Dentro da rede do Docker Compose, cada serviço é acessado pelo nome declarado no arquivo.
+
+`localhost` dentro de um container aponta para o próprio container, nunca para outro serviço.
+
+---
+
+# 47. Subir o Ambiente com os Três Serviços
+
+Executar:
+
+```bash
+docker compose up --build
+```
+
+Ou em segundo plano:
+
+```bash
+docker compose up -d --build
+```
+
+---
+
+# 48. Verificar os Três Containers em Execução
+
+```bash
+docker ps
+```
+
+Resultado esperado:
+
+```text
+docker_api_aula
+mongo_db_aula
+mongo_express_aula
+```
+
+---
+
+# 49. Acessar o Mongo Express
+
+Abrir no navegador:
+
+```text
+http://localhost:8081
+```
+
+Credenciais de acesso:
+
+```text
+Usuário: admin
+Senha:   admin123
+```
+
+O que será exibido na interface:
+
+- Lista de todos os bancos de dados
+- Collections dentro de cada banco
+- Documentos em formato JSON com paginação
+- Botões para criar, editar e deletar documentos
+- Editor de queries com syntax highlighting
+
+---
+
+# 50. Ver Logs do Mongo Express
+
+```bash
+docker compose logs mongo-express
+```
+
+---
+
+# 51. Estrutura Final com Mongo Express
+
+```text
+docker-api-aula/
+│
+├── src/
+│   ├── config/
+│   │   └── database.js
+│   ├── controllers/
+│   ├── middlewares/
+│   ├── models/
+│   │   └── task.model.js
+│   ├── routes/
+│   ├── services/
+│   └── app.js
+│
+├── .dockerignore
+├── .env
+├── Dockerfile
+├── docker-compose.yml      ← inclui mongo-express
+├── package.json
+└── package-lock.json
+```
+
+---
+
+# 52. Fluxo da Aplicação com Interface Visual
+
+```text
+Navegador/Postman
+        ↓
+API Node.js  (:3000)
+        ↓
+   Mongoose
+        ↓
+   MongoDB  (:27017)
+        ↓
+Volume Docker
+
+             ↑
+  Mongo Express (:8081)
+  [acesso visual direto ao banco]
+```
+
+---
+
+# 53. Schema do Model Task
+
+O model `Task` foi criado em `src/models/task.model.js`.
+
+Abaixo está a estrutura completa de cada campo armazenado na collection `tasks`.
+
+| Campo | Tipo | Obrigatório | Descrição |
+|---|---|---|---|
+| `_id` | ObjectId | Auto | Gerado automaticamente pelo MongoDB |
+| `title` | String | Sim | Título da tarefa. Trim aplicado. |
+| `description` | String | Não | Descrição detalhada. Trim aplicado. |
+| `completed` | Boolean | Não | Status de conclusão. Default: `false` |
+| `createdAt` | Date | Auto | Gerado por `timestamps: true` |
+| `updatedAt` | Date | Auto | Atualizado automaticamente no save |
+
+---
+
+# 54. O que é ObjectId
+
+O `_id` é gerado automaticamente pelo MongoDB em formato hexadecimal de 24 caracteres.
+
+Exemplo:
+
+```text
+"_id": "64abc1234def5678901234ab"
+```
+
+---
+
+# 55. O que são timestamps
+
+A opção `{ timestamps: true }` instrui o Mongoose a adicionar e gerenciar automaticamente os campos `createdAt` e `updatedAt`.
+
+Não é necessário declarar esses campos no Schema.
+
+---
+
+# 56. Exemplo de Documento no MongoDB
+
+Um documento da collection `tasks` armazenado no banco tem este formato:
+
+```json
+{
+  "_id":         "64abc1234def5678901234ab",
+  "title":       "Estudar Docker",
+  "description": "Finalizar o módulo de Docker Compose",
+  "completed":   false,
+  "createdAt":   "2024-01-15T10:30:00.000Z",
+  "updatedAt":   "2024-01-15T10:30:00.000Z",
+  "__v":         0
+}
+```
+
+O campo `__v` é o `versionKey` adicionado pelo Mongoose para rastrear versões do documento.
+
+---
+
+# 57. Queries Básicas — Create
+
+## Criar um documento
+
+```javascript
+const task = await Task.create({
+  title: 'Estudar Docker',
+  description: 'Ver aula de Docker Compose',
+  completed: false
+})
+```
+
+---
+
+## Criar múltiplos documentos
+
+```javascript
+const tasks = await Task.insertMany([
+  { title: 'Tarefa 1' },
+  { title: 'Tarefa 2', completed: true },
+  { title: 'Tarefa 3', description: 'Com descrição' }
+])
+```
+
+---
+
+# 58. Queries Básicas — Read
+
+## Buscar todos os documentos
+
+```javascript
+const tasks = await Task.find()
+```
+
+---
+
+## Buscar por ID
+
+```javascript
+const task = await Task.findById('64abc...')
+```
+
+---
+
+## Buscar com filtro
+
+```javascript
+// Apenas tasks concluídas
+const done = await Task.find({ completed: true })
+
+// Apenas tasks pendentes
+const pending = await Task.find({ completed: false })
+```
+
+---
+
+## Ordenar resultados
+
+```javascript
+// Mais recentes primeiro
+const tasks = await Task
+  .find()
+  .sort({ createdAt: -1 })
+```
+
+---
+
+## Selecionar campos específicos
+
+```javascript
+// Retorna apenas title e completed
+const tasks = await Task
+  .find()
+  .select('title completed')
+```
+
+---
+
+# 59. Filtros e Busca Avançada
+
+## Busca por texto com regex
+
+```javascript
+const tasks = await Task.find({
+  title: { $regex: 'docker', $options: 'i' }
+})
+```
+
+A opção `i` torna a busca insensível a maiúsculas e minúsculas.
+
+---
+
+## Paginação com skip e limit
+
+```javascript
+const page  = 2   // página desejada
+const limit = 10  // itens por página
+
+const tasks = await Task
+  .find()
+  .skip((page - 1) * limit)
+  .limit(limit)
+  .sort({ createdAt: -1 })
+```
+
+---
+
+## Operadores de comparação
+
+| Operador | Significado | Exemplo |
+|---|---|---|
+| `$eq` | igual a | `{ completed: { $eq: true } }` |
+| `$ne` | diferente de | `{ completed: { $ne: true } }` |
+| `$gt` | maior que | `{ count: { $gt: 5 } }` |
+| `$gte` | maior ou igual | `{ count: { $gte: 5 } }` |
+| `$lt` | menor que | `{ count: { $lt: 10 } }` |
+| `$in` | dentro de lista | `{ status: { $in: ['a', 'b'] } }` |
+| `$nin` | fora de lista | `{ status: { $nin: ['c'] } }` |
+
+---
+
+# 60. Queries Básicas — Update
+
+## Atualizar um documento por ID
+
+```javascript
+const updated = await Task.findByIdAndUpdate(
+  '64abc...',
+  { $set: { completed: true } },
+  { new: true, runValidators: true }
+)
+```
+
+## Explicação das opções
+
+```text
+new: true          → retorna o documento APÓS a atualização
+runValidators: true → aplica as validações definidas no Schema
+```
+
+---
+
+## Atualizar múltiplos documentos
+
+```javascript
+await Task.updateMany(
+  { completed: false },
+  { $set: { completed: true } }
+)
+```
+
+---
+
+## Operadores de update
+
+| Operador | Função | Exemplo |
+|---|---|---|
+| `$set` | Define valor de campo | `{ $set: { title: 'Novo' } }` |
+| `$unset` | Remove campo do documento | `{ $unset: { description: '' } }` |
+| `$inc` | Incrementa número | `{ $inc: { views: 1 } }` |
+| `$push` | Adiciona item a array | `{ $push: { tags: 'novo' } }` |
+| `$pull` | Remove item de array | `{ $pull: { tags: 'antigo' } }` |
+
+---
+
+# 61. Queries Básicas — Delete
+
+## Deletar por ID
+
+```javascript
+await Task.findByIdAndDelete('64abc...')
+```
+
+---
+
+## Deletar com filtro
+
+```javascript
+// Remove todas as tasks concluídas
+await Task.deleteMany({ completed: true })
+
+// Remove apenas uma task que corresponda ao filtro
+await Task.deleteOne({ title: 'Tarefa antiga' })
+```
+
+---
+
+# 62. Aggregate Pipeline
+
+O Aggregate Pipeline é a forma mais poderosa de consulta no MongoDB.
+
+Ele processa documentos em etapas chamadas stages, onde a saída de uma etapa alimenta a próxima.
+
+---
+
+## Contar tasks por status
+
+```javascript
+const stats = await Task.aggregate([
+  {
+    $group: {
+      _id: '$completed',
+      total: { $sum: 1 }
+    }
+  }
+])
+
+// Resultado:
+// [{ _id: false, total: 7 }, { _id: true, total: 3 }]
+```
+
+---
+
+## Tasks criadas por dia
+
+```javascript
+const byDay = await Task.aggregate([
+  {
+    $group: {
+      _id: {
+        $dateToString: {
+          format: '%Y-%m-%d',
+          date: '$createdAt'
+        }
+      },
+      count: { $sum: 1 }
+    }
+  },
+  { $sort: { _id: -1 } }
+])
+```
+
+---
+
+## Pipeline com múltiplos stages
+
+```javascript
+// Tasks recentes não concluídas — top 5
+const result = await Task.aggregate([
+  { $match:   { completed: false } },
+  { $sort:    { createdAt: -1 } },
+  { $limit:   5 },
+  { $project: { title: 1, createdAt: 1 } }
+])
+```
+
+---
+
+## Stages mais utilizados
+
+| Stage | Função |
+|---|---|
+| `$match` | Filtra documentos (equivalente ao WHERE) |
+| `$group` | Agrupa e calcula ($sum, $avg, $count) |
+| `$sort` | Ordena os resultados |
+| `$limit` | Limita a quantidade de documentos |
+| `$skip` | Pula N documentos (paginação) |
+| `$project` | Seleciona ou calcula campos |
+| `$lookup` | Faz JOIN com outra collection |
+| `$unwind` | Expande arrays em documentos separados |
+
+---
+
+# 63. Visualizando Dados via Mongo Express
+
+## Navegar até a collection tasks
+
+- Acesse `http://localhost:8081`
+- Clique no banco `docker_api_aula`
+- Clique na collection `tasks`
+- Os documentos serão exibidos em JSON com paginação
+
+---
+
+## Criar um documento pela interface
+
+- Clique em **New Document**
+- Preencha o JSON no editor
+- Clique em **Save**
+
+---
+
+## Editar um documento
+
+- Clique no ícone de lápis ao lado do documento
+- Edite os campos no editor JSON
+- Clique em **Save**
+
+---
+
+## Executar uma query personalizada
+
+- Clique em **Find** no topo da collection
+- Digite o filtro no campo Query:
+
+```json
+{ "completed": false }
+```
+
+- Clique em **Find** para executar
+
+---
+
+# 64. Comandos Principais desta Etapa
+
+| Comando | Função |
+|---|---|
+| `docker compose up --build` | sobe API, MongoDB e Mongo Express |
+| `docker compose up -d --build` | sobe em background |
+| `docker compose logs mongo-express` | mostra logs do Mongo Express |
+| `docker compose down` | remove todos os containers |
+| `http://localhost:8081` | acessa interface do Mongo Express |
+| `Task.create({ title: '...' })` | cria um documento |
+| `Task.find()` | busca todos os documentos |
+| `Task.findById(id)` | busca por ID |
+| `Task.find({ completed: true })` | busca com filtro |
+| `Task.find().sort({ createdAt: -1 })` | busca ordenada |
+| `Task.find().skip(10).limit(5)` | paginação |
+| `Task.findByIdAndUpdate(id, { $set: {...} })` | atualiza por ID |
+| `Task.updateMany({}, { $set: {...} })` | atualiza em massa |
+| `Task.findByIdAndDelete(id)` | remove por ID |
+| `Task.deleteMany({ completed: true })` | remove com filtro |
+| `Task.aggregate([...])` | executa pipeline de aggregation |
+
+---
+
+# 65. Resultado Esperado
+
+Ao final desta etapa, o aluno terá:
+
+- Três serviços rodando em Docker Compose: API, MongoDB e Mongo Express
+- Interface visual para explorar e editar dados sem usar o terminal
+- Schema do model Task completamente documentado
+- Domínio das operações CRUD com Mongoose
+- Uso de filtros, paginação e seleção de campos
+- Queries de update com operadores `$set`, `$unset`, `$inc`
+- Queries de aggregate com múltiplos stages
+- Fluxo completo: API → Mongoose → MongoDB → Mongo Express
+
+---
+
+# 66. Próximos Passos
+
+Após esta estrutura, o projeto pode evoluir para:
+
+- Controllers e Services separados para o CRUD de tasks
+- Rotas RESTful completas (GET, POST, PUT, DELETE)
+- Validação de dados com Joi ou express-validator
+- Autenticação com JWT
+- Documentação automática com Swagger / OpenAPI
+- Cache com Redis
+- Testes automatizados com Jest e Supertest
+- CI/CD com GitHub Actions
+- Deploy em nuvem (Railway, Render, AWS, GCP)
+- Kubernetes para orquestração em produção
