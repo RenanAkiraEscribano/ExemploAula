@@ -1599,3 +1599,464 @@ Após esta estrutura, o projeto pode evoluir para:
 - CI/CD com GitHub Actions
 - Deploy em nuvem (Railway, Render, AWS, GCP)
 - Kubernetes para orquestração em produção
+
+---
+
+# 67. Pipeline Completo — Controllers e Rotas RESTful
+
+Nesta etapa o projeto evolui para uma API RESTful completa.
+
+Serão criados:
+
+- Controller com os 5 métodos HTTP: GET, POST, PUT, PATCH e DELETE
+- Rotas mapeadas para cada método
+- Integração com o model `Task` já existente
+
+---
+
+# 68. Estrutura Final Esperada
+
+```text
+docker-api-aula/
+│
+├── src/
+│   ├── config/
+│   │   └── database.js
+│   ├── controllers/
+│   │   └── task.controller.js     ← criado nesta etapa
+│   ├── middlewares/
+│   ├── models/
+│   │   └── task.model.js
+│   ├── routes/
+│   │   └── task.routes.js         ← criado nesta etapa
+│   ├── services/
+│   └── app.js                     ← atualizado nesta etapa
+│
+├── .dockerignore
+├── .env
+├── Dockerfile
+├── docker-compose.yml
+├── package.json
+└── package-lock.json
+```
+
+---
+
+# 69. Criar o Controller de Tasks
+
+Criar o arquivo:
+
+```text
+src/controllers/task.controller.js
+```
+
+Conteúdo:
+
+```javascript
+const Task = require('../models/task.model')
+
+// GET /tasks — Listar todas as tasks
+async function getAll(req, res) {
+  try {
+    const tasks = await Task.find().sort({ createdAt: -1 })
+
+    res.status(200).json(tasks)
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao buscar tasks', error: error.message })
+  }
+}
+
+// GET /tasks/:id — Buscar uma task pelo ID
+async function getById(req, res) {
+  try {
+    const task = await Task.findById(req.params.id)
+
+    if (!task) {
+      return res.status(404).json({ message: 'Task não encontrada' })
+    }
+
+    res.status(200).json(task)
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao buscar task', error: error.message })
+  }
+}
+
+// POST /tasks — Criar uma nova task
+async function create(req, res) {
+  try {
+    const { title, description, completed } = req.body
+
+    const task = await Task.create({ title, description, completed })
+
+    res.status(201).json(task)
+  } catch (error) {
+    res.status(400).json({ message: 'Erro ao criar task', error: error.message })
+  }
+}
+
+// PUT /tasks/:id — Substituir uma task por completo
+async function replace(req, res) {
+  try {
+    const { title, description, completed } = req.body
+
+    const task = await Task.findByIdAndUpdate(
+      req.params.id,
+      { title, description, completed },
+      { new: true, runValidators: true, overwrite: true }
+    )
+
+    if (!task) {
+      return res.status(404).json({ message: 'Task não encontrada' })
+    }
+
+    res.status(200).json(task)
+  } catch (error) {
+    res.status(400).json({ message: 'Erro ao substituir task', error: error.message })
+  }
+}
+
+// PATCH /tasks/:id — Atualizar campos específicos de uma task
+async function update(req, res) {
+  try {
+    const task = await Task.findByIdAndUpdate(
+      req.params.id,
+      { $set: req.body },
+      { new: true, runValidators: true }
+    )
+
+    if (!task) {
+      return res.status(404).json({ message: 'Task não encontrada' })
+    }
+
+    res.status(200).json(task)
+  } catch (error) {
+    res.status(400).json({ message: 'Erro ao atualizar task', error: error.message })
+  }
+}
+
+// DELETE /tasks/:id — Remover uma task pelo ID
+async function remove(req, res) {
+  try {
+    const task = await Task.findByIdAndDelete(req.params.id)
+
+    if (!task) {
+      return res.status(404).json({ message: 'Task não encontrada' })
+    }
+
+    res.status(200).json({ message: 'Task removida com sucesso' })
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao remover task', error: error.message })
+  }
+}
+
+module.exports = { getAll, getById, create, replace, update, remove }
+```
+
+---
+
+# 70. Criar o Arquivo de Rotas
+
+Criar o arquivo:
+
+```text
+src/routes/task.routes.js
+```
+
+Conteúdo:
+
+```javascript
+const express = require('express')
+const router  = express.Router()
+
+const {
+  getAll,
+  getById,
+  create,
+  replace,
+  update,
+  remove
+} = require('../controllers/task.controller')
+
+router.get('/',     getAll)
+router.get('/:id',  getById)
+router.post('/',    create)
+router.put('/:id',  replace)
+router.patch('/:id', update)
+router.delete('/:id', remove)
+
+module.exports = router
+```
+
+---
+
+# 71. Atualizar o arquivo src/app.js
+
+Substitua o conteúdo de:
+
+```text
+src/app.js
+```
+
+por:
+
+```javascript
+require('dotenv').config()
+
+const express      = require('express')
+const connectDatabase = require('./config/database')
+const taskRoutes   = require('./routes/task.routes')
+
+const app = express()
+
+app.use(express.json())
+
+connectDatabase()
+
+app.get('/', (req, res) => {
+  res.json({
+    message: 'API funcionando com Node.js, Express, Docker e MongoDB'
+  })
+})
+
+app.use('/tasks', taskRoutes)
+
+const PORT = process.env.PORT || 3000
+
+app.listen(PORT, () => {
+  console.log(`Servidor rodando na porta ${PORT}`)
+})
+```
+
+---
+
+# 72. Diferença entre PUT e PATCH
+
+| Método | Comportamento | Quando usar |
+|---|---|---|
+| `PUT` | Substitui o documento inteiro | Quando todos os campos são enviados no body |
+| `PATCH` | Atualiza apenas os campos enviados | Quando apenas um campo precisa ser alterado |
+
+Exemplo prático:
+
+```text
+Task atual:
+{ title: "Estudar Docker", description: "Ver aulas", completed: false }
+
+PATCH /tasks/:id com body { "completed": true }
+→ Altera apenas completed, mantém title e description
+
+PUT /tasks/:id com body { "title": "Novo título", "completed": true }
+→ Substitui o documento (description pode ser removido se não for enviado)
+```
+
+---
+
+# 73. Tabela de Endpoints da API
+
+| Método | Rota | Ação | Status de sucesso |
+|---|---|---|---|
+| `GET` | `/tasks` | Listar todas as tasks | 200 |
+| `GET` | `/tasks/:id` | Buscar uma task por ID | 200 |
+| `POST` | `/tasks` | Criar uma nova task | 201 |
+| `PUT` | `/tasks/:id` | Substituir task completa | 200 |
+| `PATCH` | `/tasks/:id` | Atualizar campos da task | 200 |
+| `DELETE` | `/tasks/:id` | Remover task por ID | 200 |
+
+---
+
+# 74. Exemplos de Requisições no Postman
+
+## GET — Listar todas as tasks
+
+```text
+GET http://localhost:3000/tasks
+```
+
+Resposta esperada:
+
+```json
+[
+  {
+    "_id": "64abc1234def5678901234ab",
+    "title": "Estudar Docker",
+    "description": "Ver aula de Docker Compose",
+    "completed": false,
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-15T10:30:00.000Z"
+  }
+]
+```
+
+---
+
+## GET — Buscar por ID
+
+```text
+GET http://localhost:3000/tasks/64abc1234def5678901234ab
+```
+
+---
+
+## POST — Criar uma task
+
+```text
+POST http://localhost:3000/tasks
+Content-Type: application/json
+```
+
+Body:
+
+```json
+{
+  "title": "Estudar Docker",
+  "description": "Ver aula de Docker Compose",
+  "completed": false
+}
+```
+
+---
+
+## PUT — Substituir task completa
+
+```text
+PUT http://localhost:3000/tasks/64abc1234def5678901234ab
+Content-Type: application/json
+```
+
+Body:
+
+```json
+{
+  "title": "Estudar Docker Compose",
+  "description": "Revisar todos os módulos",
+  "completed": true
+}
+```
+
+---
+
+## PATCH — Atualizar campo específico
+
+```text
+PATCH http://localhost:3000/tasks/64abc1234def5678901234ab
+Content-Type: application/json
+```
+
+Body:
+
+```json
+{
+  "completed": true
+}
+```
+
+---
+
+## DELETE — Remover task
+
+```text
+DELETE http://localhost:3000/tasks/64abc1234def5678901234ab
+```
+
+Resposta esperada:
+
+```json
+{
+  "message": "Task removida com sucesso"
+}
+```
+
+---
+
+# 75. Fluxo Completo de uma Requisição
+
+```text
+Postman / Navegador
+        ↓
+   HTTP Request
+        ↓
+  src/routes/task.routes.js
+        ↓
+  src/controllers/task.controller.js
+        ↓
+  src/models/task.model.js (Mongoose)
+        ↓
+      MongoDB
+        ↓
+  JSON Response
+```
+
+---
+
+# 76. Tabela de Status HTTP Utilizados
+
+| Status | Significado | Quando é retornado |
+|---|---|---|
+| `200` | OK | Requisição bem-sucedida (GET, PUT, PATCH, DELETE) |
+| `201` | Created | Recurso criado com sucesso (POST) |
+| `400` | Bad Request | Dados inválidos ou faltando campos obrigatórios |
+| `404` | Not Found | Task não encontrada pelo ID informado |
+| `500` | Internal Server Error | Erro inesperado no servidor |
+
+---
+
+# 77. Subir o Ambiente e Testar
+
+Subir os containers:
+
+```bash
+docker compose up --build
+```
+
+Ou em background:
+
+```bash
+docker compose up -d --build
+```
+
+Testar o endpoint raiz:
+
+```text
+GET http://localhost:3000
+```
+
+Testar criação de uma task:
+
+```text
+POST http://localhost:3000/tasks
+```
+
+---
+
+# 78. Comandos Principais desta Etapa
+
+| Arquivo | Função |
+|---|---|
+| `src/controllers/task.controller.js` | Lógica de negócio para cada método HTTP |
+| `src/routes/task.routes.js` | Mapeamento de rotas para os controllers |
+| `src/app.js` | Registro das rotas na aplicação |
+
+---
+
+# 79. Resultado Esperado
+
+Ao final desta etapa, o aluno terá:
+
+- Controller completo com os 5 métodos HTTP implementados
+- Rotas RESTful registradas e funcionando
+- Diferença clara entre PUT e PATCH na prática
+- Tratamento de erros com status HTTP corretos
+- API pronta para ser testada via Postman ou Insomnia
+
+---
+
+# 80. Próximos Passos
+
+Após esta estrutura, o projeto pode evoluir para:
+
+- Camada de Services separada da lógica do controller
+- Validação de dados com Joi ou express-validator
+- Paginação e filtros nos endpoints GET
+- Autenticação com JWT
+- Documentação automática com Swagger / OpenAPI
+- Testes automatizados com Jest e Supertest
