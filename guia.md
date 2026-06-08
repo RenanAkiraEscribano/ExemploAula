@@ -2060,3 +2060,446 @@ Após esta estrutura, o projeto pode evoluir para:
 - Autenticação com JWT
 - Documentação automática com Swagger / OpenAPI
 - Testes automatizados com Jest e Supertest
+
+# 81. Consumindo APIs Públicas Externas
+
+Até aqui o projeto foi o **produtor** de uma API: ele recebe requisições e responde.
+
+Nesta etapa o projeto também passa a ser **consumidor** de APIs: ele faz requisições HTTP para serviços externos e usa o retorno.
+
+As APIs escolhidas abaixo são **gratuitas, públicas e não exigem chave de autenticação**, o que as torna ideais para estudo:
+
+| API | Para que serve | Autenticação |
+|---|---|---|
+| JSONPlaceholder | API fake de testes (posts, users, etc.) | Não |
+| ViaCEP | Consulta de endereços por CEP no Brasil | Não |
+| Open-Meteo | Previsão do tempo por latitude/longitude | Não |
+
+---
+
+# 82. fetch nativo vs axios
+
+A partir do **Node.js 18** existe a função global `fetch`, a mesma do navegador. Como o `Dockerfile` deste projeto usa `node:20-alpine`, o `fetch` já está disponível **sem instalar nada**.
+
+```javascript
+const res  = await fetch('https://...')
+const data = await res.json()
+```
+
+Se preferir uma biblioteca dedicada, o `axios` é a opção mais popular:
+
+```bash
+npm install axios
+```
+
+```javascript
+const axios = require('axios')
+
+const { data } = await axios.get('https://...')
+```
+
+Os exemplos a seguir usam `fetch` nativo para não adicionar dependências. A conversão para `axios` é direta.
+
+---
+
+# 83. Exemplo 1 — JSONPlaceholder
+
+O JSONPlaceholder é uma API de testes que devolve dados fictícios. Ótima para treinar requisições sem montar um backend.
+
+URL base:
+
+```text
+https://jsonplaceholder.typicode.com
+```
+
+## GET — Listar posts
+
+```javascript
+async function listarPosts() {
+  const res   = await fetch('https://jsonplaceholder.typicode.com/posts')
+  const posts = await res.json()
+
+  return posts // array com 100 posts fictícios
+}
+```
+
+## GET — Buscar um post por ID
+
+```javascript
+async function buscarPost(id) {
+  const res = await fetch(`https://jsonplaceholder.typicode.com/posts/${id}`)
+
+  if (!res.ok) {
+    throw new Error(`Post não encontrado (status ${res.status})`)
+  }
+
+  return res.json()
+}
+```
+
+Exemplo de retorno:
+
+```json
+{
+  "userId": 1,
+  "id": 1,
+  "title": "sunt aut facere repellat provident",
+  "body": "quia et suscipit..."
+}
+```
+
+## POST — Criar um post (simulado)
+
+O JSONPlaceholder não persiste os dados, mas devolve a resposta como se tivesse criado.
+
+```javascript
+async function criarPost(dados) {
+  const res = await fetch('https://jsonplaceholder.typicode.com/posts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(dados)
+  })
+
+  return res.json()
+}
+```
+
+---
+
+# 84. Exemplo 2 — ViaCEP
+
+O ViaCEP consulta endereços brasileiros a partir do CEP. É gratuito e muito usado em formulários para preencher endereço automaticamente.
+
+Formato da requisição:
+
+```text
+https://viacep.com.br/ws/{CEP}/json/
+```
+
+## GET — Buscar endereço por CEP
+
+```javascript
+async function buscarCep(cep) {
+  // remove tudo que não for número
+  const cepLimpo = cep.replace(/\D/g, '')
+
+  if (cepLimpo.length !== 8) {
+    throw new Error('CEP deve conter 8 dígitos')
+  }
+
+  const res  = await fetch(`https://viacep.com.br/ws/${cepLimpo}/json/`)
+  const dados = await res.json()
+
+  // CEP inexistente: o ViaCEP retorna { "erro": true }
+  if (dados.erro) {
+    throw new Error('CEP não encontrado')
+  }
+
+  return dados
+}
+```
+
+Exemplo de retorno para o CEP `01001-000`:
+
+```json
+{
+  "cep": "01001-000",
+  "logradouro": "Praça da Sé",
+  "complemento": "lado ímpar",
+  "bairro": "Sé",
+  "localidade": "São Paulo",
+  "uf": "SP",
+  "ddd": "11",
+  "ibge": "3550308"
+}
+```
+
+> Observação: um CEP em formato inválido (com letras, espaços ou número de dígitos errado) retorna status **400**. Por isso a validação antes da requisição.
+
+---
+
+# 85. Exemplo 3 — Open-Meteo
+
+O Open-Meteo devolve dados meteorológicos por coordenadas (latitude/longitude), sem chave de API.
+
+Formato da requisição:
+
+```text
+https://api.open-meteo.com/v1/forecast?latitude=LAT&longitude=LON&current=temperature_2m,wind_speed_10m
+```
+
+## GET — Tempo atual por coordenadas
+
+```javascript
+async function buscarTempo(latitude, longitude) {
+  const url =
+    `https://api.open-meteo.com/v1/forecast` +
+    `?latitude=${latitude}` +
+    `&longitude=${longitude}` +
+    `&current=temperature_2m,wind_speed_10m`
+
+  const res   = await fetch(url)
+  const dados = await res.json()
+
+  return dados.current // { temperature_2m, wind_speed_10m, time, ... }
+}
+```
+
+Exemplo de retorno (coordenadas de São Paulo):
+
+```json
+{
+  "current": {
+    "time": "2026-06-08T12:00",
+    "temperature_2m": 19.4,
+    "wind_speed_10m": 8.2
+  }
+}
+```
+
+---
+
+# 86. Integrando ao Projeto: Service + Controller + Rotas
+
+Em vez de espalhar os `fetch` pelo código, concentramos o consumo das APIs externas em um **Service**, mantendo a arquitetura já usada no projeto (`services` → `controllers` → `routes`).
+
+## Criar o Service
+
+Criar o arquivo:
+
+```text
+src/services/external.service.js
+```
+
+Conteúdo:
+
+```javascript
+// Consulta endereço por CEP no ViaCEP
+async function buscarCep(cep) {
+  const cepLimpo = String(cep).replace(/\D/g, '')
+
+  if (cepLimpo.length !== 8) {
+    throw new Error('CEP deve conter 8 dígitos')
+  }
+
+  const res   = await fetch(`https://viacep.com.br/ws/${cepLimpo}/json/`)
+  const dados = await res.json()
+
+  if (dados.erro) {
+    throw new Error('CEP não encontrado')
+  }
+
+  return dados
+}
+
+// Consulta o tempo atual no Open-Meteo
+async function buscarTempo(latitude, longitude) {
+  const url =
+    `https://api.open-meteo.com/v1/forecast` +
+    `?latitude=${latitude}&longitude=${longitude}` +
+    `&current=temperature_2m,wind_speed_10m`
+
+  const res   = await fetch(url)
+  const dados = await res.json()
+
+  return dados.current
+}
+
+// Lista posts de exemplo no JSONPlaceholder
+async function listarPosts() {
+  const res = await fetch('https://jsonplaceholder.typicode.com/posts')
+
+  return res.json()
+}
+
+module.exports = { buscarCep, buscarTempo, listarPosts }
+```
+
+## Criar o Controller
+
+Criar o arquivo:
+
+```text
+src/controllers/external.controller.js
+```
+
+Conteúdo:
+
+```javascript
+const externalService = require('../services/external.service')
+
+// GET /external/cep/:cep
+async function getCep(req, res) {
+  try {
+    const endereco = await externalService.buscarCep(req.params.cep)
+
+    res.status(200).json(endereco)
+  } catch (error) {
+    res.status(400).json({ message: error.message })
+  }
+}
+
+// GET /external/tempo?lat=...&lon=...
+async function getTempo(req, res) {
+  try {
+    const { lat, lon } = req.query
+
+    if (!lat || !lon) {
+      return res.status(400).json({ message: 'Informe lat e lon na query' })
+    }
+
+    const tempo = await externalService.buscarTempo(lat, lon)
+
+    res.status(200).json(tempo)
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao buscar o tempo', error: error.message })
+  }
+}
+
+// GET /external/posts
+async function getPosts(req, res) {
+  try {
+    const posts = await externalService.listarPosts()
+
+    res.status(200).json(posts)
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao buscar posts', error: error.message })
+  }
+}
+
+module.exports = { getCep, getTempo, getPosts }
+```
+
+## Criar as Rotas
+
+Criar o arquivo:
+
+```text
+src/routes/external.routes.js
+```
+
+Conteúdo:
+
+```javascript
+const express = require('express')
+const router  = express.Router()
+
+const {
+  getCep,
+  getTempo,
+  getPosts
+} = require('../controllers/external.controller')
+
+router.get('/cep/:cep', getCep)
+router.get('/tempo',    getTempo)
+router.get('/posts',    getPosts)
+
+module.exports = router
+```
+
+## Registrar as rotas no src/app.js
+
+Adicione o `require` e o `app.use` junto aos demais:
+
+```javascript
+const externalRoutes = require('./routes/external.routes')
+
+// ... depois de app.use('/tasks', taskRoutes)
+app.use('/external', externalRoutes)
+```
+
+---
+
+# 87. Testando os Endpoints
+
+Suba o ambiente:
+
+```bash
+docker compose up --build
+```
+
+## Consultar um CEP
+
+```text
+GET http://localhost:3000/external/cep/01001000
+```
+
+```bash
+curl http://localhost:3000/external/cep/01001000
+```
+
+## Consultar o tempo
+
+```text
+GET http://localhost:3000/external/tempo?lat=-23.55&lon=-46.63
+```
+
+```bash
+curl "http://localhost:3000/external/tempo?lat=-23.55&lon=-46.63"
+```
+
+## Listar posts de exemplo
+
+```text
+GET http://localhost:3000/external/posts
+```
+
+```bash
+curl http://localhost:3000/external/posts
+```
+
+---
+
+# 88. Tabela de APIs Públicas Gratuitas
+
+Outras APIs gratuitas e sem chave que podem ser usadas para praticar:
+
+| API | URL base | Conteúdo |
+|---|---|---|
+| JSONPlaceholder | `https://jsonplaceholder.typicode.com` | Dados fictícios (posts, users, todos) |
+| ViaCEP | `https://viacep.com.br/ws` | Endereços por CEP (Brasil) |
+| Open-Meteo | `https://api.open-meteo.com/v1` | Previsão do tempo |
+| REST Countries | `https://restcountries.com/v3.1` | Dados de países |
+| PokeAPI | `https://pokeapi.co/api/v2` | Dados de Pokémon |
+| Advice Slip | `https://api.adviceslip.com` | Frases/conselhos aleatórios |
+
+---
+
+# 89. Boas Práticas ao Consumir APIs Externas
+
+- Sempre tratar erros com `try/catch` e verificar `res.ok` / `res.status`.
+- Validar os dados de entrada antes de montar a URL (ex.: tamanho do CEP).
+- Isolar o consumo em uma camada de **Service**, nunca direto no controller.
+- Guardar URLs base e tokens em variáveis de ambiente (`.env`), não no código.
+- Definir **timeout** para não travar a aplicação se a API externa demorar.
+- Respeitar os **limites de uso** (rate limit) de cada serviço.
+- Nunca confiar cegamente no retorno: validar o formato antes de usar.
+
+Exemplo de `fetch` com timeout:
+
+```javascript
+async function comTimeout(url, ms = 5000) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), ms)
+
+  try {
+    const res = await fetch(url, { signal: controller.signal })
+    return res.json()
+  } finally {
+    clearTimeout(timer)
+  }
+}
+```
+
+---
+
+# 90. Resultado Esperado
+
+Ao final desta etapa, o aluno terá:
+
+- Entendido a diferença entre **produzir** e **consumir** uma API
+- Usado o `fetch` nativo do Node.js 20 (sem dependências)
+- Consumido três APIs públicas gratuitas: JSONPlaceholder, ViaCEP e Open-Meteo
+- Organizado o consumo em uma camada de **Service**
+- Exposto os dados externos através de **Controllers** e **Rotas** próprias
+- Aplicado boas práticas: validação, tratamento de erros e timeout
